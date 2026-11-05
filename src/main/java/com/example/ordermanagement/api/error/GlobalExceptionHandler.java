@@ -1,5 +1,7 @@
 package com.example.ordermanagement.api.error;
 
+import com.example.ordermanagement.domain.exception.InvalidStatusTransitionException;
+import com.example.ordermanagement.domain.exception.OrderNotFoundException;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.ConstraintViolation;
 import jakarta.validation.ConstraintViolationException;
@@ -107,6 +109,20 @@ public class GlobalExceptionHandler {
         );
     }
 
+    @ExceptionHandler(OrderNotFoundException.class)
+    ErrorResponse handleNotFound(
+        OrderNotFoundException exception,
+        HttpServletRequest request
+    ) {
+        return error(
+            exception,
+            HttpStatus.NOT_FOUND,
+            "Order not found",
+            exception.getMessage(),
+            request
+        );
+    }
+
     @ExceptionHandler(NoResourceFoundException.class)
     ErrorResponse handleNoResource(
         NoResourceFoundException exception,
@@ -117,6 +133,20 @@ public class GlobalExceptionHandler {
             HttpStatus.NOT_FOUND,
             "Not found",
             "The requested resource was not found",
+            request
+        );
+    }
+
+    @ExceptionHandler(InvalidStatusTransitionException.class)
+    ErrorResponse handleInvalidTransition(
+        InvalidStatusTransitionException exception,
+        HttpServletRequest request
+    ) {
+        return error(
+            exception,
+            HttpStatus.CONFLICT,
+            "Invalid status transition",
+            exception.getMessage(),
             request
         );
     }

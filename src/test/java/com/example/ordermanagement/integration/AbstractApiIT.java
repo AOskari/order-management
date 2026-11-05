@@ -3,11 +3,8 @@ package com.example.ordermanagement.integration;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import java.net.URI;
-import java.nio.charset.StandardCharsets;
 import java.time.Duration;
-import java.util.Base64;
 import java.util.Map;
-import java.util.UUID;
 import org.junit.jupiter.api.BeforeEach;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
@@ -15,6 +12,7 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.http.HttpEntity;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpMethod;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.client.ClientHttpResponse;
 import org.springframework.http.client.JdkClientHttpRequestFactory;
@@ -84,37 +82,31 @@ abstract class AbstractApiIT {
     }
 
     protected Map<String, Object> createOrder(String username) {
-        UUID orderId = UUID.randomUUID();
-        UUID customerId = customerId(username);
-        jdbc.update(
-            "insert into \"order\" (id, customer_id, status, total_amount) values (?, ?, 'CREATED', 119.97)",
-            orderId,
-            customerId
+        @SuppressWarnings("rawtypes")
+        var response = rest.exchange(
+            apiUrl("/api/v1/orders"),
+            HttpMethod.POST,
+            new HttpEntity<>(orderRequest(), jsonHeaders(token(username))),
+            Map.class
         );
-        return Map.of(
-            "id",
-            orderId.toString(),
-            "customerId",
-            customerId.toString()
-        );
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.CREATED);
+        return response.getBody();
     }
 
-    protected UUID customerId(String username) {
-        String payload = token(username).split("\\.")[1];
-        String claims = new String(
-            Base64.getUrlDecoder().decode(payload),
-            StandardCharsets.UTF_8
-        );
-        int claim = claims.indexOf("\"sub\"");
-        int colon = claims.indexOf(':', claim);
-        int start = claims.indexOf('"', colon) + 1;
-        int end = claims.indexOf('"', start);
-        if (claim < 0 || colon < 0 || start == 0 || end < start) {
-            throw new IllegalStateException(
-                "Unable to read the subject from the access token"
-            );
+    protected String orderRequest() {
+        return """
+        {
+          "items": [
+            {
+              "productId": "PROD-101",
+              "productName": "Keyboard",
+              "priceUnit": "PIECE",
+              "quantity": 2,
+              "unitPrice": 49.99
+            }
+          ]
         }
-        return UUID.fromString(claims.substring(start, end));
+        """;
     }
 
     @DynamicPropertySource
