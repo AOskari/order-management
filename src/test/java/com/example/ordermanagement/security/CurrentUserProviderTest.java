@@ -6,7 +6,6 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
-
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.security.authentication.InsufficientAuthenticationException;
@@ -37,26 +36,40 @@ class CurrentUserProviderTest {
 
     @Test
     void rejectsMissingAuthentication() {
-        assertThatThrownBy(provider::requireCurrentUser)
-                .isInstanceOf(InsufficientAuthenticationException.class);
+        assertThatThrownBy(provider::requireCurrentUser).isInstanceOf(
+            InsufficientAuthenticationException.class
+        );
     }
 
     @Test
     void rejectsNonUuidSubject() {
         authenticate("not-a-uuid", "ROLE_CUSTOMER");
 
-        assertThatThrownBy(provider::requireCurrentUser)
-                .isInstanceOf(InsufficientAuthenticationException.class);
+        assertThatThrownBy(provider::requireCurrentUser).isInstanceOf(
+            InsufficientAuthenticationException.class
+        );
+    }
+
+    @Test
+    void rejectsTokenWithoutABusinessRole() {
+        authenticate(UUID.randomUUID().toString(), "ROLE_offline_access");
+
+        assertThatThrownBy(provider::requireCurrentUser).isInstanceOf(
+            InsufficientAuthenticationException.class
+        );
     }
 
     private void authenticate(String subject, String authority) {
         Jwt jwt = Jwt.withTokenValue("token")
-                .header("alg", "none")
-                .subject(subject)
-                .claim("realm_access", Map.of("roles", List.of("CUSTOMER")))
-                .build();
+            .header("alg", "none")
+            .subject(subject)
+            .claim("realm_access", Map.of("roles", List.of("CUSTOMER")))
+            .build();
         var authentication = new JwtAuthenticationToken(
-                jwt, List.of(new SimpleGrantedAuthority(authority)), subject);
+            jwt,
+            List.of(new SimpleGrantedAuthority(authority)),
+            subject
+        );
         SecurityContextHolder.getContext().setAuthentication(authentication);
     }
 }

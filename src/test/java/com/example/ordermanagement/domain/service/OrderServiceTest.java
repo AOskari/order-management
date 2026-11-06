@@ -202,6 +202,56 @@ class OrderServiceTest {
         ).isInstanceOf(OrderNotFoundException.class);
     }
 
+    @Test
+    void filtersCustomerOrdersByStatus() {
+        UUID customerId = UUID.randomUUID();
+        Pageable pageable = PageRequest.of(0, 20);
+        Page<Order> page = new PageImpl<>(
+            List.of(order(customerId)),
+            pageable,
+            1
+        );
+        when(
+            orderRepository.findByCustomerIdAndStatus(
+                customerId,
+                OrderStatus.SHIPPED,
+                pageable
+            )
+        ).thenReturn(page);
+
+        PageResult<OrderSummaryResult> response = service.getCustomerOrders(
+            customerId,
+            pageable,
+            OrderStatus.SHIPPED
+        );
+
+        assertThat(response.content()).hasSize(1);
+        verify(orderRepository).findByCustomerIdAndStatus(
+            customerId,
+            OrderStatus.SHIPPED,
+            pageable
+        );
+    }
+
+    @Test
+    void listsAllOrdersWithoutAFilter() {
+        Pageable pageable = PageRequest.of(0, 20);
+        Page<Order> page = new PageImpl<>(
+            List.of(order(UUID.randomUUID())),
+            pageable,
+            1
+        );
+        when(orderRepository.findAll(pageable)).thenReturn(page);
+
+        PageResult<OrderSummaryResult> response = service.getAllOrders(
+            pageable,
+            null
+        );
+
+        assertThat(response.content()).hasSize(1);
+        verify(orderRepository).findAll(pageable);
+    }
+
     private CreateOrderItemData item(
         String productId,
         String productName,

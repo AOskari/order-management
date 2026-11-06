@@ -13,6 +13,7 @@ import static org.springframework.security.test.web.servlet.request.SecurityMock
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -42,6 +43,7 @@ import org.mockito.ArgumentCaptor;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest;
 import org.springframework.context.annotation.Import;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
 import org.springframework.http.MediaType;
@@ -133,6 +135,83 @@ class OrderControllerTest {
             )
             .andExpect(status().isBadRequest())
             .andExpect(jsonPath("$.errors.items").exists());
+    }
+
+    @Test
+    void rejectsMalformedJsonBody() throws Exception {
+        mockMvc
+            .perform(
+                post("/api/v1/orders")
+                    .with(customerJwt(UUID.randomUUID()))
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .content("{\"items\":[")
+            )
+            .andExpect(status().isBadRequest())
+            .andExpect(jsonPath("$.title").value("Malformed request"));
+    }
+
+    @Test
+    void rejectsUnsupportedContentType() throws Exception {
+        mockMvc
+            .perform(
+                post("/api/v1/orders")
+                    .with(customerJwt(UUID.randomUUID()))
+                    .contentType(MediaType.TEXT_PLAIN)
+                    .content(validRequest())
+            )
+            .andExpect(status().isUnsupportedMediaType());
+    }
+
+    @Test
+    void rejectsUnsupportedMethod() throws Exception {
+        mockMvc
+            .perform(put("/api/v1/orders").with(customerJwt(UUID.randomUUID())))
+            .andExpect(status().isMethodNotAllowed());
+    }
+
+    @Test
+    void unknownPathReturnsNotFound() throws Exception {
+        mockMvc
+            .perform(get("/api/v1/unknown").with(roleJwt("SUPPORT")))
+            .andExpect(status().isNotFound())
+            .andExpect(jsonPath("$.title").value("Not found"));
+    }
+
+    @Test
+    void hidesUnexpectedFailures() throws Exception {
+        when(orderService.createOrder(any(CreateOrderData.class))).thenThrow(
+            new IllegalStateException("database exploded")
+        );
+
+        mockMvc
+            .perform(
+                post("/api/v1/orders")
+                    .with(customerJwt(UUID.randomUUID()))
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .content(validRequest())
+            )
+            .andExpect(status().isInternalServerError())
+            .andExpect(jsonPath("$.title").value("Internal server error"))
+            .andExpect(
+                jsonPath("$.detail").value("An unexpected error occurred")
+            );
+    }
+
+    @Test
+    void mapsDataIntegrityViolationToConflict() throws Exception {
+        when(orderService.createOrder(any(CreateOrderData.class))).thenThrow(
+            new DataIntegrityViolationException("duplicate key value")
+        );
+
+        mockMvc
+            .perform(
+                post("/api/v1/orders")
+                    .with(customerJwt(UUID.randomUUID()))
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .content(validRequest())
+            )
+            .andExpect(status().isConflict())
+            .andExpect(jsonPath("$.title").value("Request conflict"));
     }
 
     @Test

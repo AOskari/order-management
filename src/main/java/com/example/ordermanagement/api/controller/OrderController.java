@@ -21,6 +21,7 @@ import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotEmpty;
 import java.net.URI;
 import java.util.List;
+import java.util.Objects;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
@@ -107,8 +108,10 @@ public class OrderController {
     }
 
     private UUID customerId(Jwt jwt) {
-        String subject = jwt.getSubject();
-        assert subject != null;
-        return UUID.fromString(subject);
+        // The role converter rejects tokens whose subject is not a UUID, so this cannot fail
+        // in practice; requireNonNull keeps a programming error visible instead of an assert.
+        return UUID.fromString(
+            Objects.requireNonNull(jwt.getSubject(), "JWT subject")
+        );
     }
 }
