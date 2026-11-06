@@ -5,7 +5,7 @@
 
 .DESCRIPTION
     The token is written to stdout; the summary goes to stderr, so the script can be used
-    in an assignment. PowerShell equivalent of scripts/get-token.sh.
+    in an assignment. PowerShell equivalent of scripts/local/get-token.sh.
 
 .PARAMETER Username
     Realm user: customer1, customer2, support1 or admin1.
@@ -15,16 +15,16 @@
 
 .PARAMETER Issuer
     Realm URL. Defaults to OIDC_ISSUER_URI, then .env, then
-    http://localhost:8081/realms/order-management.
+    http://host.docker.internal:8081/realms/order-management.
 
 .PARAMETER Json
     Print the whole token response instead of the access token.
 
 .EXAMPLE
-    $token = .\scripts\get-token.ps1 -Username customer1 -Password password
+    $token = .\scripts\local\get-token.ps1 -Username customer1 -Password password
 
 .EXAMPLE
-    .\scripts\get-token.ps1 -Username admin1 -Password password -Json
+    .\scripts\local\get-token.ps1 -Username admin1 -Password password -Json
 #>
 
 param(
@@ -35,7 +35,7 @@ param(
     [switch] $Help
 )
 
-$repoRoot = Split-Path -Parent $PSScriptRoot
+$repoRoot = Split-Path -Parent (Split-Path -Parent $PSScriptRoot)
 Set-Location -LiteralPath $repoRoot
 
 function Write-Log
@@ -120,7 +120,7 @@ if ([string]::IsNullOrWhiteSpace($Issuer) -and (Test-Path -LiteralPath $envPath)
 }
 if ([string]::IsNullOrWhiteSpace($Issuer))
 {
-    $Issuer = 'http://localhost:8081/realms/order-management'
+    $Issuer = 'http://host.docker.internal:8081/realms/order-management'
 }
 
 $tokenUrl = "$Issuer/protocol/openid-connect/token"

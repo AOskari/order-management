@@ -1,4 +1,9 @@
-# Local development infrastructure only; see docker/local/README.md.
+# Local development environment: PostgreSQL, Keycloak and the application.
+# Nothing here is used in a real deployment; see docker/local/README.md.
+#
+# Initialization needs no helper script: the PostgreSQL image runs
+# docker/local/postgres/init/01-roles.sh when it creates the data directory, and Keycloak
+# imports docker/local/keycloak/realm-export.json on start.
 services:
   postgres:
     image: postgres:16
@@ -7,6 +12,8 @@ services:
       POSTGRES_DB: order_management
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+      # Read by docker/local/postgres/init/01-roles.sh, which the image runs once, when it
+      # initializes an empty data directory. Change them with 'docker compose down -v'.
       OMS_OWNER_PASSWORD: ${DB_OWNER_PASSWORD:-change-me-owner}
       OMS_APP_PASSWORD: ${DB_APP_PASSWORD:-change-me-app}
     ports:
@@ -27,6 +34,9 @@ services:
     environment:
       KC_BOOTSTRAP_ADMIN_USERNAME: ${KC_ADMIN_USER:-admin}
       KC_BOOTSTRAP_ADMIN_PASSWORD: ${KC_ADMIN_PASSWORD:-admin}
+      # Tokens always carry this issuer. host.docker.internal resolves to the Docker host,
+      # so the host and the application container validate the same value.
+      KC_HOSTNAME: ${KEYCLOAK_URL:-http://host.docker.internal:8081}
     ports:
       - "8081:8080"
     volumes:
@@ -40,6 +50,33 @@ services:
       interval: 10s
       timeout: 5s
       retries: 30
+
+  app:
+    build: .
+    # Rebuild on 'docker compose up' so the running container always matches the source.
+    pull_policy: build
+    container_name: oms-app
+    depends_on:
+      postgres:
+        condition: service_healthy
+      keycloak:
+        condition: service_healthy
+    environment:
+      # The container is configured from the environment only; application.yaml has no
+      # defaults, and the 'docker' profile skips the .env import of the local profile.
+      SPRING_PROFILES_ACTIVE: docker
+      DB_URL: jdbc:postgresql://postgres:5432/order_management
+      DB_APP_USER: ${DB_APP_USER:-oms_app}
+      DB_APP_PASSWORD: ${DB_APP_PASSWORD:-change-me-app}
+      DB_OWNER_USER: ${DB_OWNER_USER:-oms_owner}
+      DB_OWNER_PASSWORD: ${DB_OWNER_PASSWORD:-change-me-owner}
+      OIDC_ISSUER_URI: ${KEYCLOAK_URL:-http://host.docker.internal:8081}/realms/order-management
+    extra_hosts:
+      # Needed on Docker hosts that do not resolve host.docker.internal themselves; the
+      # Docker Desktop for Windows/macOS engine provides it already.
+      - "host.docker.internal:host-gateway"
+    ports:
+      - "${APP_PORT:-8080}:8080"
 
 volumes:
   pgdata:

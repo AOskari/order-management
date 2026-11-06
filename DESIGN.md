@@ -24,13 +24,15 @@ The specification leaves a few points open; these are the resolutions.
 Further assumptions:
 
 - **Product data** is supplied by the caller; the service owns no catalog.
-- **Admin operations** are listing all orders and updating status. There are no delete,
-  user-management or product-admin endpoints.
+- **Admin operations** are listing all orders and changing status, including the delivery
+  step that is reserved to ADMIN. There are no delete, user-management or product-admin
+  endpoints.
 - **Money:** `BigDecimal` and `NUMERIC(12,2)`, `HALF_UP`, one implicit currency.
 - **Identity:** `customer_id` is the Keycloak `sub` (a UUID); a token carries exactly one
   business role and Keycloak default roles are ignored.
 - **Scope:** single tenant; customer isolation is the only row-scoping rule.
-- **Price units:** `PIECE`, `KILOGRAM`, `LITER`; no conversion.
+- **Price units:** `PIECE`, `KILOGRAM`, `LITER`; no conversion. `priceUnit` is required even
+  though the assignment's sample payload omits it, because a quantity is unit-dependent.
 - **Limits:** 1–100 items, quantity 1–10,000, unit price with at most 2 decimals, total
   must fit `NUMERIC(12,2)`.
 
@@ -176,8 +178,10 @@ so closing an order is always an administrative act.
   (`order-management-api`).
 - `JwtRoleConverter` keeps only `CUSTOMER`/`SUPPORT`/`ADMIN`, requires exactly one role and
   a UUID subject, and maps it to `ROLE_*`.
-- Authorization is enforced at the controller boundary with `@PreAuthorize`; the
-  data-dependent checks live in `OrderAuthorization`:
+- Authorization is enforced at the controller boundary. `@PreAuthorize` holds the role
+  gates and the ownership checks; the status-target check is an explicit call in the
+  handler, because it reads the request body and must run after validation (`400` before
+  `403`). The rules themselves live in `OrderAuthorization`:
   - `canAccessCustomer` compares the JWT `sub` with the path ID (SUPPORT/ADMIN bypass).
   - `canReadOrder` compares the `sub` with the order's customer (SUPPORT/ADMIN bypass;
     missing orders fall through so the service returns `404`).
@@ -238,5 +242,5 @@ Transactions:
 - No inventory, tax, discounts, shipping, currency conversion or payment integration.
 - No product catalog, validation or search in this service.
 - No idempotency keys or optimistic locking; `@Version` could be added later.
-- Integration tests need Docker and skip without it; the local initialization scripts run
-  only once per fresh volume.
+- Integration tests need Docker and skip without it; the local containers create the roles
+  and import the realm only when the database volume is empty (`docker compose down -v`).

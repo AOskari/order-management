@@ -7,6 +7,10 @@ Everything in this directory exists only to run the service on a developer machi
 - `keycloak/realm-export.json` is the development realm: roles, the `order-management-api`
   client with direct access grants, and the seeded test users.
 
+Both are applied by `docker compose up` itself: the PostgreSQL entrypoint runs the role
+script when it initializes the data directory, and Keycloak imports the realm on start. No
+helper script runs afterwards.
+
 Neither is used in a real environment. A deployment runs against a managed PostgreSQL
 instance (roles and grants provisioned by the platform) and the organisation's identity
 provider (real clients, real users, no password grant). Only `docker-compose.yaml` mounts

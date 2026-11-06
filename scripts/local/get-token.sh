@@ -4,17 +4,17 @@
 # grant. The token is printed on stdout; diagnostics go to stderr, so the script can be
 # used in a command substitution.
 #
-# Usage: sh scripts/get-token.sh -u customer1 -p password [--issuer URL] [--json]
+# Usage: sh scripts/local/get-token.sh -u customer1 -p password [--issuer URL] [--json]
 #   -u, --username NAME   realm user (customer1, customer2, support1, admin1)
 #   -p, --password PASS   password of that user
 #   --issuer URL          realm URL; defaults to OIDC_ISSUER_URI, then .env, then
-#                         http://localhost:8081/realms/order-management
+#                         http://host.docker.internal:8081/realms/order-management
 #   --json                print the whole token response instead of the access token
 
 set -eu
 
 script_dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
-repo_root=$(CDPATH= cd -- "$script_dir/.." && pwd)
+repo_root=$(CDPATH= cd -- "$script_dir/../.." && pwd)
 
 die() {
     printf 'get-token: ERROR: %s\n' "$*" >&2
@@ -72,7 +72,7 @@ fi
 if [ -z "$issuer" ] && [ -f "$repo_root/.env" ]; then
     issuer=$(sed -n 's/^OIDC_ISSUER_URI=//p' "$repo_root/.env" | head -n 1 | tr -d '\r')
 fi
-[ -n "$issuer" ] || issuer=http://localhost:8081/realms/order-management
+[ -n "$issuer" ] || issuer=http://host.docker.internal:8081/realms/order-management
 
 response=$(curl -sS -w '\n%{http_code}' -X POST "$issuer/protocol/openid-connect/token" \
     -H 'Content-Type: application/x-www-form-urlencoded' \
