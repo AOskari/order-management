@@ -66,9 +66,10 @@ same values with the password grant: token URL
 client `order-management-api` (public, no secret, credentials in the body), scope `openid`.
 
 Local users in the imported realm, all with password `password`: `customer1`, `customer2`
-(CUSTOMER), `support1` (SUPPORT), `admin1` (ADMIN). Tokens last 5 minutes. The password
-grant is enabled for local testing only: it needs no browser round trip, whereas
-authorization code would require a redirect URI and a callback listener.
+(CUSTOMER), `support1` (SUPPORT), `admin1` (ADMIN); they are defined in
+`docker/local/keycloak/realm-export.json`. Tokens last 5 minutes. The password grant is
+enabled for local testing only: it needs no browser round trip, whereas authorization code
+would require a redirect URI and a callback listener.
 
 ## Configuration
 
@@ -205,7 +206,11 @@ yet.
 - **Prices are trusted from the caller.** A cached product check is the planned mitigation.
 - **No optimistic locking or idempotency keys**, so a retried `POST` duplicates an order.
 - **Single currency**; no inventory, tax, discounts, shipping or payment logic.
-- **Docker initialization is one-shot**: `docker compose down -v`, or `--reset`, recreates it.
+- **Docker state lives in two named volumes** (`pgdata`, `keycloak-data`), so recreating a
+  container keeps the data and `docker compose down -v` (or `--reset`) removes it. The roles
+  and the realm are created only for an empty state, so a change to `realm-export.json`
+  needs that reset; the realm pins its user IDs, so even a re-import keeps the token
+  subjects that order rows reference.
 
 ## Project layout
 
