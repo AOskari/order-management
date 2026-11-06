@@ -1,9 +1,5 @@
 package com.example.ordermanagement.api.controller;
 
-import java.net.URI;
-import java.util.List;
-import java.util.UUID;
-
 import com.example.ordermanagement.api.dto.request.CreateOrderRequest;
 import com.example.ordermanagement.api.dto.request.UpdateOrderStatusRequest;
 import com.example.ordermanagement.api.dto.response.OrderResponse;
@@ -18,10 +14,14 @@ import com.example.ordermanagement.domain.order.OrderResult;
 import com.example.ordermanagement.domain.order.OrderSummaryResult;
 import com.example.ordermanagement.domain.order.PageResult;
 import com.example.ordermanagement.domain.service.OrderService;
+import com.example.ordermanagement.security.OrderAuthorization;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotEmpty;
+import java.net.URI;
+import java.util.List;
+import java.util.UUID;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
@@ -47,15 +47,21 @@ public class OrderController {
     private final OrderService orderService;
     private final OrderMapper orderMapper;
     private final PageableFactory pageableFactory;
+    private final OrderAuthorization orderAuthorization;
 
     @PostMapping
     @PreAuthorize("hasRole('CUSTOMER')")
-    public ResponseEntity<OrderResponse> create(@AuthenticationPrincipal Jwt jwt,
-            @Valid @RequestBody CreateOrderRequest request) {
-        OrderResult order = orderService.createOrder(orderMapper.toData(customerId(jwt), request));
+    public ResponseEntity<OrderResponse> create(
+        @AuthenticationPrincipal Jwt jwt,
+        @Valid @RequestBody CreateOrderRequest request
+    ) {
+        OrderResult order = orderService.createOrder(
+            orderMapper.toData(customerId(jwt), request)
+        );
         OrderResponse response = orderMapper.toResponse(order);
-        return ResponseEntity.created(URI.create("/api/v1/orders/" + response.id()))
-                .body(response);
+        return ResponseEntity.created(
+            URI.create("/api/v1/orders/" + response.id())
+        ).body(response);
     }
 
     @GetMapping("/{orderId}")
@@ -67,25 +73,37 @@ public class OrderController {
     @GetMapping
     @PreAuthorize("hasAnyRole('SUPPORT', 'ADMIN')")
     public PageResponse<OrderSummaryResponse> getAllOrders(
-            @RequestParam(defaultValue = "0")
-            @Min(value = 0, message = "page must be greater than or equal to 0") int page,
-            @RequestParam(defaultValue = "20")
-            @Min(value = 1, message = "size must be at least 1")
-            @Max(value = 100, message = "size must be at most 100") int size,
-            @RequestParam(defaultValue = "CREATED_AT")
-            @NotEmpty(message = "sortFields must contain at least one field")
-            List<SortField> sortFields,
-            @RequestParam(defaultValue = "DESC") SortOrder sortOrder,
-            @RequestParam(required = false) OrderStatus status) {
-        PageResult<OrderSummaryResult> orders = orderService.getAllOrders(pageableFactory.create(page, size, sortFields, sortOrder), status);
+        @RequestParam(defaultValue = "0") @Min(
+            value = 0,
+            message = "page must be greater than or equal to 0"
+        ) int page,
+        @RequestParam(defaultValue = "20") @Min(
+            value = 1,
+            message = "size must be at least 1"
+        ) @Max(value = 100, message = "size must be at most 100") int size,
+        @RequestParam(defaultValue = "CREATED_AT") @NotEmpty(
+            message = "sortFields must contain at least one field"
+        ) List<SortField> sortFields,
+        @RequestParam(defaultValue = "DESC") SortOrder sortOrder,
+        @RequestParam(required = false) OrderStatus status
+    ) {
+        PageResult<OrderSummaryResult> orders = orderService.getAllOrders(
+            pageableFactory.create(page, size, sortFields, sortOrder),
+            status
+        );
         return orderMapper.toSummaryPage(orders);
     }
 
     @PatchMapping("/{orderId}/status")
-    @PreAuthorize("hasRole('ADMIN')")
-    public OrderResponse updateStatus(@PathVariable UUID orderId,
-            @Valid @RequestBody UpdateOrderStatusRequest request) {
-        return orderMapper.toResponse(orderService.updateStatus(orderId, request.status()));
+    @PreAuthorize("hasAnyRole('SUPPORT', 'ADMIN')")
+    public OrderResponse updateStatus(
+        @PathVariable UUID orderId,
+        @Valid @RequestBody UpdateOrderStatusRequest request
+    ) {
+        orderAuthorization.requireStatusUpdatePermission(request.status());
+        return orderMapper.toResponse(
+            orderService.updateStatus(orderId, request.status())
+        );
     }
 
     private UUID customerId(Jwt jwt) {

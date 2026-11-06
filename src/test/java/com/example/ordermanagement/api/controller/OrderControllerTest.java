@@ -5,7 +5,9 @@ import static org.hamcrest.Matchers.containsString;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.ArgumentMatchers.isNull;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.jwt;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
@@ -43,6 +45,7 @@ import org.springframework.context.annotation.Import;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
 import org.springframework.http.MediaType;
+import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.oauth2.jwt.JwtDecoder;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
@@ -396,18 +399,50 @@ class OrderControllerTest {
             )
             .andExpect(status().isOk())
             .andExpect(jsonPath("$.status").value("CONFIRMED"));
+
+        verify(orderAuthorization).requireStatusUpdatePermission(
+            OrderStatus.CONFIRMED
+        );
     }
 
     @Test
-    void supportCannotUpdateOrderStatus() throws Exception {
+    void supportUpdatesOrderStatus() throws Exception {
+        UUID orderId = UUID.randomUUID();
+        when(
+            orderService.updateStatus(orderId, OrderStatus.SHIPPED)
+        ).thenReturn(orderResult(orderId, OrderStatus.SHIPPED));
+
+        mockMvc
+            .perform(
+                patch("/api/v1/orders/{orderId}/status", orderId)
+                    .with(roleJwt("SUPPORT"))
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .content("{\"status\":\"SHIPPED\"}")
+            )
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.status").value("SHIPPED"));
+
+        verify(orderAuthorization).requireStatusUpdatePermission(
+            OrderStatus.SHIPPED
+        );
+    }
+
+    @Test
+    void supportCannotDeliverAnOrder() throws Exception {
+        doThrow(new AccessDeniedException("SUPPORT cannot deliver"))
+            .when(orderAuthorization)
+            .requireStatusUpdatePermission(OrderStatus.DELIVERED);
+
         mockMvc
             .perform(
                 patch("/api/v1/orders/{orderId}/status", UUID.randomUUID())
                     .with(roleJwt("SUPPORT"))
                     .contentType(MediaType.APPLICATION_JSON)
-                    .content("{\"status\":\"CONFIRMED\"}")
+                    .content("{\"status\":\"DELIVERED\"}")
             )
             .andExpect(status().isForbidden());
+
+        verifyNoInteractions(orderService);
     }
 
     @Test

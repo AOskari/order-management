@@ -4,8 +4,8 @@ A small Spring Boot REST API for creating and managing orders. PostgreSQL stores
 orders, Keycloak issues the JWTs, and Spring Security enforces role and ownership rules.
 
 - **CUSTOMER** creates orders and reads their own.
-- **SUPPORT** reads orders across customers.
-- **ADMIN** reads all orders and advances status: `CREATED → CONFIRMED → SHIPPED → DELIVERED`.
+- **SUPPORT** reads orders across customers and moves them to `CONFIRMED` and `SHIPPED`.
+- **ADMIN** reads all orders and delivers them; it may perform any status change.
 - Totals are computed on the server; the caller never supplies one.
 
 Single currency. No payments, inventory or product catalog.
@@ -88,7 +88,7 @@ All paths are under `/api/v1`. Use a token for a user with the role listed.
 | GET    | `/api/v1/orders/{id}`                   | CUSTOMER own, SUPPORT, ADMIN |
 | GET    | `/api/v1/customers/{customerId}/orders` | CUSTOMER own, SUPPORT, ADMIN |
 | GET    | `/api/v1/orders`                        | SUPPORT, ADMIN               |
-| PATCH  | `/api/v1/orders/{id}/status`            | ADMIN                        |
+| PATCH  | `/api/v1/orders/{id}/status`            | SUPPORT, ADMIN (see below)   |
 
 Create an order:
 
@@ -113,9 +113,16 @@ curl -X PATCH localhost:8080/api/v1/orders/{id}/status \
 ```
 
 A CUSTOMER may only pass their own ID (the JWT `sub`); other customers and orders return
-`403`, missing orders `404`, invalid transitions `409`. `sortFields` accepts `CREATED_AT`,
-`UPDATED_AT` and `TOTAL_AMOUNT` (default `CREATED_AT DESC`); `size` is 1–100. Errors are
-`application/problem+json`, with an `errors` map for validation failures.
+`403`, missing orders `404`, invalid transitions `409`.
+
+Status updates follow `CREATED → CONFIRMED → SHIPPED → DELIVERED`: SUPPORT may set
+`CONFIRMED` and `SHIPPED`, while only ADMIN may set `DELIVERED`. Repeating the current
+status is an idempotent `200`; skipping a step returns `409`; a SUPPORT request for
+`DELIVERED` returns `403`.
+
+`sortFields` accepts `CREATED_AT`, `UPDATED_AT` and `TOTAL_AMOUNT` (default
+`CREATED_AT DESC`); `size` is 1–100. Errors are `application/problem+json`, with an
+`errors` map for validation failures.
 
 ## Running the tests
 
@@ -161,8 +168,9 @@ yet.
 
 ## Assumptions, limitations and known issues
 
-- **Only ADMIN updates status.** The specification contradicts itself about SUPPORT; this
-  follows the explicit status-update instruction, so SUPPORT is read-only.
+- **SUPPORT confirms and ships; only ADMIN delivers.** The scenario gives SUPPORT status
+  updates, so SUPPORT may target `CONFIRMED` and `SHIPPED`; `DELIVERED` is reserved for
+  ADMIN, which can also perform the earlier steps.
 - **Transitions are enforced in the application**, not by a database trigger.
 - **No row-level security.** The runtime role is not the owner and has no `BYPASSRLS`.
 - **Prices are trusted from the caller.** A cached product check is the planned mitigation.

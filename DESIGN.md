@@ -6,19 +6,20 @@ A versioned REST API over a small order domain. PostgreSQL persists orders, Keyc
 issues JWTs, Spring Security enforces the rules.
 
 - CUSTOMER creates orders and reads only their own.
-- SUPPORT reads orders across customers; ADMIN reads all orders and advances status.
+- SUPPORT reads orders across customers and moves them to `CONFIRMED` and `SHIPPED`; ADMIN
+  reads all orders and delivers them.
 - An order has one or more items, each with quantity, unit price and a server-computed total.
 - Lifecycle: `CREATED → CONFIRMED → SHIPPED → DELIVERED`.
 
 ## 2. Assumptions and clarifying questions
 
-The specification contradicts itself in three places; these are the resolutions.
+The specification leaves a few points open; these are the resolutions.
 
-| Ambiguity | Resolution |
-|---|---|
-| SUPPORT changes status (scenario) vs ADMIN only (status section) | ADMIN only; SUPPORT is read-only |
-| Listing all orders: ADMIN (API section) vs SUPPORT (scenario) | SUPPORT and ADMIN |
-| `GET /api/{userId}/orders` lets a customer probe IDs | `GET /api/v1/customers/{customerId}/orders`; a CUSTOMER may only pass their own ID |
+| Ambiguity                                                     | Resolution                                                                         |
+| ------------------------------------------------------------- | ---------------------------------------------------------------------------------- |
+| Which statuses may SUPPORT set? (§3.3 asks for the split)     | SUPPORT sets `CONFIRMED` and `SHIPPED`; only ADMIN sets `DELIVERED`                |
+| Listing all orders: ADMIN (API section) vs SUPPORT (scenario) | SUPPORT and ADMIN                                                                  |
+| `GET /api/{userId}/orders` lets a customer probe IDs          | `GET /api/v1/customers/{customerId}/orders`; a CUSTOMER may only pass their own ID |
 
 Further assumptions:
 
@@ -91,13 +92,13 @@ erDiagram
 
 Base path `/api/v1`, JSON only, ISO-8601 UTC timestamps.
 
-| Method | Path                                    | Roles                        |
-| ------ | --------------------------------------- | ---------------------------- |
-| POST   | `/api/v1/orders`                        | CUSTOMER                     |
-| GET    | `/api/v1/orders/{orderId}`              | CUSTOMER own, SUPPORT, ADMIN |
-| GET    | `/api/v1/customers/{customerId}/orders` | CUSTOMER own, SUPPORT, ADMIN |
-| GET    | `/api/v1/orders`                        | SUPPORT, ADMIN               |
-| PATCH  | `/api/v1/orders/{orderId}/status`       | ADMIN                        |
+| Method | Path                                    | Roles                                |
+| ------ | --------------------------------------- | ------------------------------------ |
+| POST   | `/api/v1/orders`                        | CUSTOMER                             |
+| GET    | `/api/v1/orders/{orderId}`              | CUSTOMER own, SUPPORT, ADMIN         |
+| GET    | `/api/v1/customers/{customerId}/orders` | CUSTOMER own, SUPPORT, ADMIN         |
+| GET    | `/api/v1/orders`                        | SUPPORT, ADMIN                       |
+| PATCH  | `/api/v1/orders/{orderId}/status`       | SUPPORT `CONFIRMED`/`SHIPPED`, ADMIN |
 
 Create request:
 
@@ -164,9 +165,10 @@ Pagination: `page` ≥ 0 (default 0); `size` 1–100 (default 20); `sortFields` 
 enum of `CREATED_AT`, `UPDATED_AT`, `TOTAL_AMOUNT`; `sortOrder` is `ASC` or `DESC`; `id` is
 appended as a tie-breaker. Every listing accepts an optional `status` filter.
 
-Status update (ADMIN) sends `{ "status": "CONFIRMED" }`. Only the next status in the chain
-is accepted, repeating the current one is an idempotent no-op, invalid transitions return
-`409`.
+Status update sends `{ "status": "CONFIRMED" }`. Only the next status in the chain is
+accepted, repeating the current one is an idempotent no-op, invalid transitions return
+`409`. SUPPORT drives fulfilment (`CONFIRMED`, `SHIPPED`); only ADMIN may set `DELIVERED`,
+so closing an order is always an administrative act.
 
 ## 6. Authentication and authorization strategy
 
@@ -179,6 +181,8 @@ is accepted, repeating the current one is an idempotent no-op, invalid transitio
   - `canAccessCustomer` compares the JWT `sub` with the path ID (SUPPORT/ADMIN bypass).
   - `canReadOrder` compares the `sub` with the order's customer (SUPPORT/ADMIN bypass;
     missing orders fall through so the service returns `404`).
+  - `requireStatusUpdatePermission` holds the role-to-status table: SUPPORT may target
+    `CREATED` (no-op only), `CONFIRMED` and `SHIPPED`; ADMIN may target every status.
 - The customer ID always comes from the token, never from a request body.
 - The service layer contains no security logic; the HTTP controllers are the only entry
   point.
@@ -194,6 +198,7 @@ is accepted, repeating the current one is an idempotent no-op, invalid transitio
 | Validation failure, malformed body, bad parameter | 400    |
 | Missing/invalid token                             | 401    |
 | Wrong role or cross-customer access               | 403    |
+| SUPPORT setting `DELIVERED`                       | 403    |
 | Order not found                                   | 404    |
 | Invalid status transition                         | 409    |
 | Data integrity conflict                           | 409    |
@@ -212,18 +217,18 @@ Transactions:
 
 ## 8. Important design decisions and trade-offs
 
-| Decision | Reasoning and trade-off |
-|---|---|
-| Product snapshot on the item | Orders stay immutable; prices cannot be validated here, so a product cache is planned. |
-| Transitions in `OrderStatus` | One implementation, no trigger; direct SQL can bypass it. |
-| Authorization at the controller | Services stay security-free; in-process callers are trusted. |
-| Forbidden before missing | Missing orders fall through so clients get `404`, not a misleading `403`. |
-| Admin-only status updates | Follows the explicit instruction; SUPPORT stays read-only. |
-| Server-computed totals | `BigDecimal` on the server, so clients cannot influence the amount. |
-| Sort whitelist and `id` tie-breaker | No column injection; stable pages. |
-| Separate `order_item` table | Models 1:N and leaves room for per-item features. |
-| No row-level security | Simpler than RLS; SQL is not row-filtered. |
-| Singular, quoted table names | Tables match entities; `"order"` needs quoting. |
+| Decision                                   | Reasoning and trade-off                                                                                       |
+| ------------------------------------------ | ------------------------------------------------------------------------------------------------------------- |
+| Product snapshot on the item               | Orders stay immutable; prices cannot be validated here, so a product cache is planned.                        |
+| Transitions in `OrderStatus`               | One implementation, no trigger; direct SQL can bypass it.                                                     |
+| Authorization at the controller            | Services stay security-free; in-process callers are trusted.                                                  |
+| Forbidden before missing                   | Missing orders fall through so clients get `404`, not a misleading `403`.                                     |
+| Support confirms and ships, admin delivers | Matches the scenario; closing an order stays administrative. ADMIN is a superset, so it can unblock any step. |
+| Server-computed totals                     | `BigDecimal` on the server, so clients cannot influence the amount.                                           |
+| Sort whitelist and `id` tie-breaker        | No column injection; stable pages.                                                                            |
+| Separate `order_item` table                | Models 1:N and leaves room for per-item features.                                                             |
+| No row-level security                      | Simpler than RLS; SQL is not row-filtered.                                                                    |
+| Singular, quoted table names               | Tables match entities; `"order"` needs quoting.                                                               |
 
 ## 9. Known limitations and potential future improvements
 
