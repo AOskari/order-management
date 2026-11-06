@@ -44,9 +44,9 @@ docker compose up -d postgres keycloak           # infrastructure only
 ```
 
 `.env` is imported by `application-local.yaml`, which the `local` default profile
-activates, and by `springboot4-dotenv`; `application.yaml` has no fallbacks, so a missing
-variable fails fast. The `app` container skips that import (`SPRING_PROFILES_ACTIVE=docker`)
-and receives every value from the compose environment.
+activates; `application.yaml` has no fallbacks, so a missing variable fails fast. The `app`
+container skips that import (`SPRING_PROFILES_ACTIVE=docker`) and receives every value from
+the compose environment.
 
 Keycloak advertises `http://host.docker.internal:8081` as its issuer (`KEYCLOAK_URL` in
 `.env`), not `localhost`. That name resolves to the Docker host from the host and from the
